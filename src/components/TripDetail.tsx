@@ -1,6 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getTrip } from '../api';
+import {
+  attachPhoto,
+  createEntry,
+  getTrip,
+  requestPhotoUploadUrl,
+} from '../api';
 import type { Caption, Entry, Photo, Trip } from '../types';
 import PhotoUploader from './PhotoUploader';
 import CaptionSuggest from './CaptionSuggest';
@@ -15,6 +20,9 @@ export default function TripDetail() {
   const [entries, setEntries] = useState<LoadedEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [tripUploadStatus, setTripUploadStatus] = useState<string>('');
+  const [tripUploadError, setTripUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -26,6 +34,53 @@ export default function TripDetail() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, [id]);
+
+  function triggerTripPhotoPicker() {
+    setTripUploadError(null);
+    fileInputRef.current?.click();
+  }
+
+  async function handleTripFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!id) return;
+    setTripUploadError(null);
+    try {
+      setTripUploadStatus('Creating entry…');
+      const entry = await createEntry(id, {
+        title: 'New entry',
+        body: '',
+        loggedAt: new Date().toISOString(),
+      });
+
+      setTripUploadStatus('Requesting upload URL…');
+      const { url, gcsPath } = await requestPhotoUploadUrl(entry.id, file.type);
+
+      setTripUploadStatus('Uploading to storage…');
+      const putRes = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!putRes.ok) {
+        throw new Error(`PUT to signed URL failed: ${putRes.status}`);
+      }
+
+      setTripUploadStatus('Finalizing…');
+      await attachPhoto(entry.id, gcsPath);
+
+      setTripUploadStatus('Refreshing…');
+      const data = await getTrip(id);
+      setTrip(data.trip);
+      setEntries(data.entries);
+      setTripUploadStatus('Uploaded.');
+    } catch (err) {
+      setTripUploadError(err instanceof Error ? err.message : String(err));
+      setTripUploadStatus('');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -42,6 +97,30 @@ export default function TripDetail() {
         <>
           <h2 className="text-3xl font-semibold mt-3">{trip.title}</h2>
           <p className="text-slate-600 mt-1">{trip.description}</p>
+
+          <div className="mt-6 flex items-center gap-3">
+            <button
+              data-testid="trip-add-photo"
+              type="button"
+              onClick={triggerTripPhotoPicker}
+              className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-700"
+            >
+              + Add Photo
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleTripFile}
+            />
+            {tripUploadStatus && (
+              <span className="text-sm text-slate-500">{tripUploadStatus}</span>
+            )}
+            {tripUploadError && (
+              <span className="text-sm text-red-500">{tripUploadError}</span>
+            )}
+          </div>
 
           <div className="mt-8 space-y-6">
             {entries.map((entry) => (

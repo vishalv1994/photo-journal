@@ -7,6 +7,9 @@ export default function TripsList() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     listTrips()
@@ -15,17 +18,35 @@ export default function TripsList() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleAdd() {
+  function startAdding() {
+    setNewTitle('');
+    setAdding(true);
+  }
+
+  function cancelAdding() {
+    setAdding(false);
+    setNewTitle('');
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const title = newTitle.trim();
+    if (!title || submitting) return;
+    setSubmitting(true);
     try {
       const trip = await createTrip({
-        title: 'Untitled trip',
+        title,
         description: '',
         startDate: new Date().toISOString(),
         endDate: new Date().toISOString(),
       });
       setTrips((prev) => [trip, ...prev]);
+      setAdding(false);
+      setNewTitle('');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -33,13 +54,46 @@ export default function TripsList() {
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-semibold">Trips</h2>
-        <button
-          onClick={handleAdd}
-          className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-700"
-        >
-          + Add Trip
-        </button>
+        {!adding && (
+          <button
+            onClick={startAdding}
+            className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-700"
+          >
+            + Add Trip
+          </button>
+        )}
       </div>
+
+      {adding && (
+        <form
+          onSubmit={handleSubmit}
+          className="mb-6 flex items-center gap-2 bg-white rounded-xl shadow-sm p-3"
+        >
+          <input
+            data-testid="new-trip-title"
+            autoFocus
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Trip title"
+            className="flex-1 border border-slate-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <button
+            type="submit"
+            disabled={!newTitle.trim() || submitting}
+            className="bg-slate-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            onClick={cancelAdding}
+            className="bg-slate-100 text-slate-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-slate-200"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
 
       {loading && <p className="text-slate-500">Loading trips…</p>}
       {error && (
