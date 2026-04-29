@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
-  GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
   signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   type Auth,
 } from 'firebase/auth';
 import { getMe, setIdToken } from '../api';
@@ -28,10 +28,16 @@ interface Props {
   children: React.ReactNode;
 }
 
+type Mode = 'sign-in' | 'sign-up';
+
 export default function AuthGuard({ children }: Props) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('sign-up');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const { auth } = getFirebase();
@@ -56,6 +62,24 @@ export default function AuthGuard({ children }: Props) {
     return () => unsub();
   }, []);
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const { auth } = getFirebase();
+      if (mode === 'sign-up') {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (loading) {
     return <div className="p-8 text-slate-600">Loading…</div>;
   }
@@ -63,22 +87,49 @@ export default function AuthGuard({ children }: Props) {
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-white rounded-2xl shadow p-8 max-w-sm w-full text-center">
-          <h1 className="text-2xl font-semibold mb-2">Photo Journal</h1>
-          <p className="text-slate-500 mb-6">Sign in to view your trips.</p>
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-2xl shadow p-8 max-w-sm w-full"
+        >
+          <h1 className="text-2xl font-semibold mb-2 text-center">Photo Journal</h1>
+          <p className="text-slate-500 mb-6 text-center">
+            {mode === 'sign-up' ? 'Create an account to start a trip.' : 'Sign in to view your trips.'}
+          </p>
+          <input
+            type="email"
+            required
+            placeholder="email@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            autoComplete="email"
+          />
+          <input
+            type="password"
+            required
+            minLength={6}
+            placeholder="password (≥ 6 chars)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            autoComplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+          />
           <button
-            onClick={() => {
-              const { auth } = getFirebase();
-              signInWithPopup(auth, new GoogleAuthProvider()).catch((e) =>
-                setError(e.message),
-              );
-            }}
-            className="w-full bg-slate-900 text-white rounded-lg py-2 font-medium hover:bg-slate-700"
+            type="submit"
+            disabled={submitting}
+            className="w-full bg-slate-900 text-white rounded-lg py-2 font-medium hover:bg-slate-700 disabled:opacity-60"
           >
-            Sign in with Google
+            {submitting ? 'Working…' : mode === 'sign-up' ? 'Sign up' : 'Sign in'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'sign-up' ? 'sign-in' : 'sign-up')}
+            className="w-full text-slate-500 hover:text-slate-900 text-sm mt-3"
+          >
+            {mode === 'sign-up' ? 'Already have an account? Sign in.' : 'Need an account? Sign up.'}
           </button>
           {error && <p className="text-red-500 text-sm mt-4">{error}</p>}
-        </div>
+        </form>
       </div>
     );
   }
